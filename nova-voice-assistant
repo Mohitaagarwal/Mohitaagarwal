@@ -1,0 +1,168 @@
+# nova.py
+
+import speech_recognition as sr
+import pyttsx3
+import webbrowser
+import os
+from kivy.app import App
+from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.button import Button
+from kivy.uix.label import Label
+from kivy.clock import Clock
+from plyer import call, sms, camera, notification, wifi
+from datetime import datetime
+
+engine = pyttsx3.init()
+
+def speak(text):
+    engine.say(text)
+    engine.runAndWait()
+
+def wake_word_listener():
+    r = sr.Recognizer()
+    with sr.Microphone() as source:
+        print("Listening for wake word: 'Hey Nova'")
+        audio = r.listen(source, phrase_time_limit=3)
+    try:
+        text = r.recognize_google(audio).lower()
+        if "hey nova" in text:
+            speak("Yes, I'm listening")
+            return True
+        else:
+            return False
+    except:
+        return False
+
+def recognize_speech():
+    r = sr.Recognizer()
+    with sr.Microphone() as source:
+        audio = r.listen(source)
+    try:
+        return r.recognize_google(audio).lower()
+    except:
+        return ""
+
+def execute_command(command):
+    if "call" in command:
+        number = command.replace("call", "").strip()
+        speak(f"Calling {number}")
+        call.makecall(number=number)
+
+    elif "send message to" in command:
+        number = command.split("to")[1].strip()
+        speak("What is the message?")
+        msg = recognize_speech()
+        sms.send(recipient=number, message=msg)
+        speak("Message sent")
+
+    elif "open youtube" in command:
+        webbrowser.open("https://www.youtube.com")
+        speak("Opening YouTube")
+
+    elif "open whatsapp" in command:
+        os.system("am start -n com.whatsapp/com.whatsapp.Main")
+
+    elif "search" in command:
+        query = command.replace("search", "").strip()
+        webbrowser.open(f"https://www.google.com/search?q={query}")
+        speak(f"Searching for {query}")
+
+    elif "play music" in command:
+        os.system("am start -a android.intent.action.MUSIC_PLAYER")
+
+    elif "open camera" in command:
+        camera.take_picture("/sdcard/DCIM/capture.jpg", lambda x: speak("Picture taken"))
+
+    elif "wifi on" in command:
+        wifi.on()
+        speak("Wi-Fi turned on")
+
+    elif "wifi off" in command:
+        wifi.off()
+        speak("Wi-Fi turned off")
+
+    elif "notify" in command:
+        notification.notify(title="Nova", message="This is your voice assistant")
+        speak("Notification sent")
+
+    elif "battery status" in command:
+        from plyer import battery
+        status = battery.status
+        speak(f"Battery is at {status['percentage']}% and {'charging' if status['isCharging'] else 'not charging'}")
+
+    elif "turn on flashlight" in command:
+        from jnius import autoclass
+        PythonActivity = autoclass('org.kivy.android.PythonActivity')
+        Context = autoclass('android.content.Context')
+        CameraManager = autoclass('android.hardware.camera2.CameraManager')
+        cam_service = PythonActivity.mActivity.getSystemService(Context.CAMERA_SERVICE)
+        camera_id = cam_service.getCameraIdList()[0]
+        cam_service.setTorchMode(camera_id, True)
+        speak("Flashlight turned on")
+
+    elif "turn off flashlight" in command:
+        cam_service.setTorchMode(camera_id, False)
+        speak("Flashlight turned off")
+
+    elif "volume up" in command:
+        os.system("input keyevent 24")
+        speak("Volume increased")
+
+    elif "volume down" in command:
+        os.system("input keyevent 25")
+        speak("Volume decreased")
+
+    elif "time" in command:
+        now = datetime.now().strftime("%I:%M %p")
+        speak(f"The time is {now}")
+
+    elif "open file" in command:
+        speak("Sorry, file opening not yet supported on Android")
+
+    elif "write note" in command:
+        speak("What should I write?")
+        note = recognize_speech()
+        with open("/sdcard/Notes/note.txt", "a") as f:
+            f.write(note + "\n")
+        speak("Note saved")
+
+    elif "exit" in command:
+        speak("Goodbye!")
+        exit()
+    else:
+        speak("Command not recognized")
+
+class AssistantGUI(BoxLayout):
+    def __init__(self, **kwargs):
+        super().__init__(orientation='vertical')
+        self.label = Label(text="Tap and speak", font_size=24)
+        self.button = Button(text="Start Listening", font_size=24)
+        self.button.bind(on_press=self.listen_command)
+        self.add_widget(self.label)
+        self.add_widget(self.button)
+
+    def listen_command(self, instance):
+        self.label.text = "Waiting for 'Hey Nova'..."
+        Clock.schedule_once(lambda dt: self.check_wake_word(), 1)
+
+    def check_wake_word(self):
+        if wake_word_listener():
+            self.label.text = "Listening..."
+            Clock.schedule_once(lambda dt: self.process_command(), 1)
+        else:
+            self.label.text = "Wake word not detected"
+
+    def process_command(self):
+        command = recognize_speech()
+        if command:
+            self.label.text = f"You said: {command}"
+            execute_command(command)
+        else:
+            self.label.text = "Sorry, I didn't catch that."
+
+class NovaApp(App):
+    def build(self):
+        return AssistantGUI()
+
+if __name__ == "__main__":
+    NovaApp().run()
